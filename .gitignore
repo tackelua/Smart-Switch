@@ -1,0 +1,7 @@
+.vs/
+__vm/
+Debug/
+!Release/
+Release/*
+!Release/Smart-Switch.bin
+desktop.ini
