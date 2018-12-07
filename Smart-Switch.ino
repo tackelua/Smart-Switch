@@ -13,6 +13,7 @@
 #include <ESP8266httpUpdate.h>
 #include <ESP8266WiFiAP.h>
 #include <ESP8266WiFi.h>
+#include <PubSubClient.h>
 #include <WiFiManager.h>
 #define BLYNK_PRINT Serial
 #include <BlynkSimpleEsp8266.h>
@@ -22,7 +23,7 @@
 #include <Button.h>
 #include <FS.h>
 
-#define VERSION     "0.1.1"
+#define VERSION     "0.1.2"
 
 
 #define INPUT1       12
@@ -49,6 +50,18 @@ int blynkPort = 8442;
 WidgetTerminal Terminal(TERMINAL);
 WidgetRTC rtc;
 
+const char* mqtt_server = "mic.duytan.edu.vn";
+const char* mqtt_user = "Mic@DTU2017";
+const char* mqtt_password = "Mic@DTU2017!@#";
+const uint16_t mqtt_port = 1883;
+WiFiClient mqtt_espClient;
+PubSubClient mqtt_client(mqtt_espClient);
+
+String tp_req = HARDWARE_ID + "/REQ";
+String tp_res = HARDWARE_ID + "/RES";
+String tp_stt = HARDWARE_ID + "/STT";
+
+
 #define Sprint		Serial.print
 #define Sprintln	Serial.println
 #define Sprintf		Serial.printf
@@ -73,9 +86,16 @@ void Ttime() {
 	Tprint(s);
 	Tflush();
 }
+String s_time() {
+	String s;
+	s += (F("["));
+	s += getTimeStr();
+	s += (F("] "));
+	return s;
+}
 
 #define Dprint(x)		{ LED_ON(); Sprint(x); Sflush(); Tprint(x); Tflush(); LED_OFF(); }
-#define Dprintln(x)		{ LED_ON(); Sprintln(x); Sflush(); Tprintln(x); Tflush(); LED_OFF(); }  
+#define Dprintln(x)		{ LED_ON(); Sprintln(x); Sflush(); Tprintln(x); Tflush(); mqtt_publish(tp_res, x, false); LED_OFF(); }
 #define Dprintf(...)	{ LED_ON(); Sprintf(__VA_ARGS__); Sflush(); Tprintf(__VA_ARGS__); Tflush(); LED_OFF();}
 #define Dtime()			{ Stime(); Ttime(); }
 
@@ -177,8 +197,7 @@ void handle_button() {
 	if (Button1.wasPressed() || Button1.wasReleased()) {
 		Switch1.toggle();
 		Blynk.virtualWrite(VPIN1, Switch1.status);
-		String d = "HUB | OUTPUT1 = " + String(Switch1.status);
-		Dtime();
+		String d = s_time() + "HUB | OUTPUT1 = " + String(Switch1.status);
 		Dprintln(d);
 		delay(1); yield();
 	}
@@ -186,8 +205,7 @@ void handle_button() {
 	if (Button2.wasPressed() || Button2.wasReleased()) {
 		Switch2.toggle();
 		Blynk.virtualWrite(VPIN2, Switch2.status);
-		String d = "HUB | OUTPUT2 = " + String(Switch2.status);
-		Dtime();
+		String d = s_time() + "HUB | OUTPUT2 = " + String(Switch2.status);
 		Dprintln(d);
 		delay(1); yield();
 	}
@@ -195,8 +213,7 @@ void handle_button() {
 	if (Button3.wasPressed() || Button3.wasReleased()) {
 		Switch3.toggle();
 		Blynk.virtualWrite(VPIN3, Switch3.status);
-		String d = "HUB | OUTPUT3 = " + String(Switch3.status);
-		Dtime();
+		String d = s_time() + "HUB | OUTPUT3 = " + String(Switch3.status);
 		Dprintln(d);
 		delay(1); yield();
 	}
@@ -311,15 +328,13 @@ void Blynk_init() {
 
 
 void update_firmware(String url = "") {
-	//update firmware
-	Sprintln(url);
-	Dprintln(F("Update Firmware"));
 	String link;
 	if (url.length() > 0) {
 		link = url;
 	}
-	Dprint("URL: ");
-	Dprintln(link);
+	String d = "Update Firmware\r\n" + link;
+	Dprintln(d);
+
 	bool ret = ESPhttpUpdate.update(link);
 
 	switch (ret) {
@@ -343,8 +358,6 @@ void handle_command(String cmd) {
 	if (cmd.length() <= 0) {
 		return;
 	}
-	String _c = "CMD>>" + cmd;
-	Dprintln(_c);
 
 	if (cmd == "/rs" || cmd == "/restart") {
 		restart(true);
@@ -421,12 +434,108 @@ void handle_serial() {
 }
 
 
+bool mqtt_publish(String topic, String payload, bool retain) {
+	if (!mqtt_client.connected()) {
+		return false;
+	}
+	LED_ON();
+	Sprint(("MQTT<<<  "));
+	Sprintln(topic);
+	Sprintln(payload);
+	Sprintln();
+
+	bool ret = mqtt_client.publish(topic.c_str(), payload.c_str(), retain);
+	LED_OFF();
+	yield();
+	return ret;
+}
+void mqtt_reconnect() {
+	if (!mqtt_client.connected()) {
+		Sprintln(("\r\nAttempting MQTT connection..."));
+		if (mqtt_client.connect(HARDWARE_ID.c_str(), mqtt_user, mqtt_password, tp_stt.c_str(), MQTTQOS1, true, "offline")) {
+			Sprintln(("Connected."));
+			mqtt_publish(tp_stt, "online", true);
+			mqtt_client.subscribe(tp_req.c_str());
+		}
+		else {
+			Sprint(("failed, rc="));
+			Sprintln(String(mqtt_client.state()));
+			return;
+		}
+	}
+}
+void mqtt_callback(char* topic, uint8_t* payload, unsigned int length) {
+	String pl;
+	LED_ON();
+	for (uint i = 0; i < length; i++) {
+		pl += (char)payload[i];
+	}
+	LED_OFF();
+	Sprintln(pl);
+
+	if (pl == "1on") {
+		Switch1.turn(true);
+		String d = s_time() + "MQTT | OUTPUT1 = " + String(true);
+		Blynk.virtualWrite(VPIN1, Switch1.status);
+		Dprintln(d);
+	}
+	else if (pl == "1off") {
+		Switch1.turn(false);
+		String d = s_time() + "MQTT | OUTPUT1 = " + String(false);
+		Blynk.virtualWrite(VPIN1, Switch1.status);
+		Dprintln(d);
+	}
+	else if (pl == "2on") {
+		Switch2.turn(true);
+		String d = s_time() + "MQTT | OUTPUT2 = " + String(true);
+		Blynk.virtualWrite(VPIN2, Switch2.status);
+		Dprintln(d);
+	}
+	else if (pl == "2off") {
+		Switch2.turn(false);
+		String d = s_time() + "MQTT | OUTPUT2 = " + String(false);
+		Blynk.virtualWrite(VPIN2, Switch2.status);
+		Dprintln(d);
+	}
+	else if (pl == "3on") {
+		Switch3.turn(true);
+		String d = s_time() + "MQTT | OUTPUT3 = " + String(true);
+		Blynk.virtualWrite(VPIN3, Switch3.status);
+		Dprintln(d);
+	}
+	else if (pl == "3off") {
+		Switch3.turn(false);
+		String d = s_time() + "MQTT | OUTPUT3 = " + String(false);
+		Blynk.virtualWrite(VPIN3, Switch3.status);
+		Dprintln(d);
+	}
+	else handle_command(pl);
+}
+void mqtt_init() {
+	mqtt_client.setServer(mqtt_server, mqtt_port);
+	mqtt_client.setCallback(mqtt_callback);
+}
+void mqtt_loop() {
+	if (!WiFi.isConnected()) {
+		return;
+	}
+	if (!mqtt_client.connected()) {
+		mqtt_reconnect();
+	}
+	mqtt_client.loop();
+	yield();
+}
 
 BLYNK_CONNECTED() {
 	// Synchronize time on connection
 	//Blynk.syncAll();
 	rtc.begin();
-	Blynk.syncVirtual(VPIN1, VPIN2, VPIN3);
+	//Blynk.syncVirtual(VPIN1, VPIN2, VPIN3);
+
+	Switch1.turn(false);
+	Switch2.turn(false);
+	Switch3.turn(false);
+
 	delay(1); yield();
 }
 
@@ -439,28 +548,25 @@ BLYNK_WRITE(TERMINAL) {
 
 BLYNK_WRITE(VPIN1) {
 	int val = param.asInt();
-	String d = "APP | OUTPUT1 = " + String(val);
-	Dtime();
-	Dprintln(d);
 	Switch1.turn(val);
+	String d = s_time() + "APP | OUTPUT1 = " + String(val);
+	Dprintln(d);
 	delay(1); yield();
 }
 
 BLYNK_WRITE(VPIN2) {
 	int val = param.asInt();
-	String d = "APP | OUTPUT2 = " + String(val);
-	Dtime();
-	Dprintln(d);
 	Switch2.turn(val);
+	String d = s_time() + "APP | OUTPUT2 = " + String(val);
+	Dprintln(d);
 	delay(1); yield();
 }
 
 BLYNK_WRITE(VPIN3) {
 	int val = param.asInt();
-	String d = "APP | OUTPUT3 = " + String(val);
-	Dtime();
-	Dprintln(d);
 	Switch3.turn(val);
+	String d = s_time() + "APP | OUTPUT3 = " + String(val);
+	Dprintln(d);
 	delay(1); yield();
 }
 
@@ -471,12 +577,15 @@ void setup()
 	load_blynk_token();
 	WiFi_init();
 	Blynk_init();
+	mqtt_init();
+	LED_OFF();
 }
 
 // Add the main program code into the continuous loop() function
 void loop()
 {
 	Blynk.run();
+	mqtt_loop();
 	handle_serial();
 	handle_button();
 }
