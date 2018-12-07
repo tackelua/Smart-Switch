@@ -117,7 +117,7 @@
   </ImportGroup>
   <ProjectExtensions>
     <VisualStudio>
-      <UserProperties custom_esp8266com_d1_mini_eesz="4M1M" arduino.upload.port="COM8" />
+      <UserProperties custom_esp8266com_d1_mini_eesz="4M1M" arduino.upload.port="COM3" />
     </VisualStudio>
   </ProjectExtensions>
 </Project>

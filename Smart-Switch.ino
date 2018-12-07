@@ -22,7 +22,7 @@
 #include <Button.h>
 #include <FS.h>
 
-#define VERSION     "0.1"
+#define VERSION     "0.1.1"
 
 
 #define INPUT1       12
@@ -278,9 +278,9 @@ void save_blynk_token() {
 
 void Blynk_init() {
 	Sprintln(F("\r\nBlynk Init"));
-	Sprintln("Server\t" + blynkServer);
-	Sprintln("Port\t" + blynkPort);
-	Sprintln("Token\t" + blynkToken);
+	Sprintln("Server:\t" + blynkServer);
+	Sprintln("Port:\t" + String(blynkPort));
+	Sprintln("Token:\t" + blynkToken);
 
 	static IPAddress ipServer;
 	if (ipServer.fromString(blynkServer)) {
@@ -339,6 +339,13 @@ void update_firmware(String url = "") {
 }
 void handle_command(String cmd) {
 	yield();
+	cmd.trim();
+	if (cmd.length() <= 0) {
+		return;
+	}
+	String _c = "CMD>>" + cmd;
+	Dprintln(_c);
+
 	if (cmd == "/rs" || cmd == "/restart") {
 		restart(true);
 		delay(100);
@@ -353,7 +360,7 @@ void handle_command(String cmd) {
 		update_firmware(url);
 
 	}
-	else if (cmd == "/v" || cmd == "/version") {
+	else if (cmd == "/v" || cmd.startsWith("/version")) {
 		String v = "Version: " VERSION;
 		Dprintln(v);
 	}
@@ -361,38 +368,45 @@ void handle_command(String cmd) {
 		String t = "Blynk Token: " + blynkToken;
 		Dprintln(t);
 	}
-	else if (cmd == "/set token") {
+	else if (cmd.startsWith("/set token")) {
 		String token;
 		token = cmd.substring(10);
 		token.trim();
 
 		String d = "Token : " + token;
 		Dprintln(d);
-
-		Blynk.config(blynkToken.c_str(), token.c_str(), blynkPort);
-
-		bool s = false;
-		while (Blynk.connect() != true) {
-			s = !s;
-			if (s) {
-				LED_ON();
-			}
-			else {
-				LED_OFF();
-			}
-			delay(100);
-		}
 		blynkToken = token;
 		save_blynk_token();
+		delay(500);
+		restart(false);
+
+		//Blynk.config(blynkToken.c_str(), token.c_str(), blynkPort);
+		//
+		//bool s = false;
+		//while (Blynk.connect() != true) {
+		//	s = !s;
+		//	if (s) {
+		//		LED_ON();
+		//	}
+		//	else {
+		//		LED_OFF();
+		//	}
+		//	delay(100);
+		//}
+		//blynkToken = token;
 	}
 	else if (cmd == "/id") {
 		String i = "ID: " + HARDWARE_ID;
 		Dprintln(i);
 	}
 	else if (cmd == "/reset") {
-		String i = "Factory reset";
+		String i = "WiFi reset";
 		Dprintln(i);
 		create_AP_portal();
+	}
+	else {
+		String e = "Command unknown";
+		Dprintln(e);
 	}
 	delay(1); yield();
 }
@@ -454,7 +468,7 @@ BLYNK_WRITE(VPIN3) {
 void setup()
 {
 	hardware_init();
-	//load_blynk_token();
+	load_blynk_token();
 	WiFi_init();
 	Blynk_init();
 }
