@@ -23,7 +23,7 @@
 #include <Button.h>
 #include <FS.h>
 
-#define VERSION     "0.1.3"
+#define VERSION     "0.1.4"
 
 
 #define INPUT1       12
@@ -45,7 +45,7 @@ const char* file_blynk_token = "/blynk.token";
 
 String blynkToken = "d8297a5187c14fea8b04e92d8e4c2292";
 String blynkServer = "gith.cf";
-int blynkPort = 8442;
+int blynkPort = 5222;//8442;
 
 WidgetTerminal Terminal(TERMINAL);
 WidgetRTC rtc;
