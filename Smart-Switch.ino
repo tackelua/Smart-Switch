@@ -23,7 +23,7 @@
 #include <Button.h>
 #include <FS.h>
 
-#define VERSION     "0.1.4"
+#define VERSION     "0.1.5.1"
 
 
 #define INPUT1       12
@@ -618,22 +618,16 @@ BLYNK_WRITE(VPIN3) {
 
 void blink_led() {
 	static bool s = false;
-	unsigned long t = millis();
+	static unsigned long t = millis();
 	if (millis() - t > 1900) {
 		t = millis();
 		s = true;
-		if (s) {
-			LED_ON();
-		}
+		LED_ON();
 	}
-	if (s) {
-		if (millis() - t > 100) {
-			t = millis();
-			s = false;
-			if (s) {
-				LED_OFF();
-			}
-		}
+	if (s && (millis() - t > 100)) {
+		t = millis();
+		s = false;
+		LED_OFF();
 	}
 }
 
