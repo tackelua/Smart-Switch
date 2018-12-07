@@ -23,7 +23,7 @@
 #include <Button.h>
 #include <FS.h>
 
-#define VERSION     "0.1.2"
+#define VERSION     "0.1.3"
 
 
 #define INPUT1       12
@@ -39,7 +39,7 @@
 #define VPIN2        V2
 #define VPIN3        V3
 
-String HARDWARE_ID = "SWITCH_GITH";
+String HARDWARE_ID = "GITH-SW";
 
 const char* file_blynk_token = "/blynk.token";
 
@@ -57,9 +57,9 @@ const uint16_t mqtt_port = 1883;
 WiFiClient mqtt_espClient;
 PubSubClient mqtt_client(mqtt_espClient);
 
-String tp_req = HARDWARE_ID + "/REQ";
-String tp_res = HARDWARE_ID + "/RES";
-String tp_stt = HARDWARE_ID + "/STT";
+String tp_req = HARDWARE_ID + "/req";
+String tp_res = HARDWARE_ID + "/res";
+String tp_stt = HARDWARE_ID + "/stt";
 
 
 #define Sprint		Serial.print
@@ -259,6 +259,15 @@ void WiFi_init() {
 	Sprintln(WiFi.localIP());
 }
 
+int wifi_quality() {
+	int32_t dBm = WiFi.RSSI();
+	if (dBm <= -100)
+		return 0;
+	else if (dBm >= -50)
+		return 100;
+	else
+		return int(2 * (dBm + 100));
+}
 void load_blynk_token() {
 	SPIFFS.begin();
 	File  blynk_token;
@@ -307,23 +316,22 @@ void Blynk_init() {
 		Blynk.config(blynkToken.c_str(), blynkServer.c_str(), blynkPort);
 	}
 
-	bool s = false;
-	unsigned long t = millis();
-	while (Blynk.connect() != true) {
-		if (millis() - t > 100) {
-			t = millis();
-			s = !s;
-			if (s) {
-				LED_ON();
-			}
-			else {
-				LED_OFF();
-			}
-		}
-		handle_serial();
-		handle_button();
-	}
-	LED_OFF();
+	//bool s = false;
+	//unsigned long t = millis();
+	//while (Blynk.connect() != true) {
+	//	if (millis() - t > 100) {
+	//		t = millis();
+	//		s = !s;
+	//		if (s) {
+	//			LED_ON();
+	//		}
+	//		else {
+	//			LED_OFF();
+	//		}
+	//	}
+	//	handle_serial();
+	//	handle_button();
+	//}
 }
 
 
@@ -350,6 +358,27 @@ void update_firmware(String url = "") {
 		Sprintln(F("HTTP_UPDATE_OK"));
 		restart(true);
 		break;
+	}
+}void set_wifi_from_command(String& cmd) {
+	//set wifi <ssid>|<psk>
+	cmd = cmd.substring(9);
+	cmd.trim();
+	int pos = cmd.indexOf("|");
+	if (pos > 0) {
+		String _ssid = cmd.substring(0, pos);
+		String _pw = cmd.substring(pos + 1);
+		WiFi.disconnect();
+		delay(100);
+		WiFi.begin(_ssid.c_str(), _pw.c_str());
+		Sprint(F("Connecting to "));
+		Sprintln(_ssid);
+		Sprint(F("Password: "));
+		Sprintln(_pw);
+		if (WiFi.waitForConnectResult() == WL_CONNECTED) {
+			Sprintln(F("Connected"));
+		}
+		Sprint(F("IP: "));
+		Sprintln(WiFi.localIP());
 	}
 }
 void handle_command(String cmd) {
@@ -417,6 +446,14 @@ void handle_command(String cmd) {
 		Dprintln(i);
 		create_AP_portal();
 	}
+	else if (cmd == "/w" || cmd.startsWith("/wifi")) {
+		String w = "WiFi: " + WiFi.SSID() + " - " + String(wifi_quality());
+		Dprintln(w);
+	}
+	else if (cmd.startsWith("/set wifi")) {
+		//set wifi <ssid>|<psk>
+		set_wifi_from_command(cmd);
+	}
 	else {
 		String e = "Command unknown";
 		Dprintln(e);
@@ -433,16 +470,24 @@ void handle_serial() {
 	delay(1); yield();
 }
 
+String getID() {
+	byte mac[6];
+	WiFi.macAddress(mac);
+	String id;
+	for (int i = 3; i < 6; i++)
+	{
+		id += mac[i] < 16 ? "0" + String(mac[i], HEX) : String(mac[i], HEX);
+	}
+	id.toUpperCase();
+	Sprintln(id);
+	return id;
+}
 
 bool mqtt_publish(String topic, String payload, bool retain) {
 	if (!mqtt_client.connected()) {
 		return false;
 	}
 	LED_ON();
-	Sprint(("MQTT<<<  "));
-	Sprintln(topic);
-	Sprintln(payload);
-	Sprintln();
 
 	bool ret = mqtt_client.publish(topic.c_str(), payload.c_str(), retain);
 	LED_OFF();
@@ -452,7 +497,8 @@ bool mqtt_publish(String topic, String payload, bool retain) {
 void mqtt_reconnect() {
 	if (!mqtt_client.connected()) {
 		Sprintln(("\r\nAttempting MQTT connection..."));
-		if (mqtt_client.connect(HARDWARE_ID.c_str(), mqtt_user, mqtt_password, tp_stt.c_str(), MQTTQOS1, true, "offline")) {
+		String id = HARDWARE_ID + getID();
+		if (mqtt_client.connect(id.c_str(), mqtt_user, mqtt_password, tp_stt.c_str(), MQTTQOS1, true, "offline")) {
 			Sprintln(("Connected."));
 			mqtt_publish(tp_stt, "online", true);
 			mqtt_client.subscribe(tp_req.c_str());
@@ -475,37 +521,37 @@ void mqtt_callback(char* topic, uint8_t* payload, unsigned int length) {
 
 	if (pl == "1on") {
 		Switch1.turn(true);
-		String d = s_time() + "MQTT | OUTPUT1 = " + String(true);
+		String d = s_time() + "MQTT | OUTPUT1 = " + String(Switch1.status);
 		Blynk.virtualWrite(VPIN1, Switch1.status);
 		Dprintln(d);
 	}
 	else if (pl == "1off") {
 		Switch1.turn(false);
-		String d = s_time() + "MQTT | OUTPUT1 = " + String(false);
+		String d = s_time() + "MQTT | OUTPUT1 = " + String(Switch1.status);
 		Blynk.virtualWrite(VPIN1, Switch1.status);
 		Dprintln(d);
 	}
 	else if (pl == "2on") {
 		Switch2.turn(true);
-		String d = s_time() + "MQTT | OUTPUT2 = " + String(true);
+		String d = s_time() + "MQTT | OUTPUT2 = " + String(Switch2.status);
 		Blynk.virtualWrite(VPIN2, Switch2.status);
 		Dprintln(d);
 	}
 	else if (pl == "2off") {
 		Switch2.turn(false);
-		String d = s_time() + "MQTT | OUTPUT2 = " + String(false);
+		String d = s_time() + "MQTT | OUTPUT2 = " + String(Switch2.status);
 		Blynk.virtualWrite(VPIN2, Switch2.status);
 		Dprintln(d);
 	}
 	else if (pl == "3on") {
 		Switch3.turn(true);
-		String d = s_time() + "MQTT | OUTPUT3 = " + String(true);
+		String d = s_time() + "MQTT | OUTPUT3 = " + String(Switch3.status);
 		Blynk.virtualWrite(VPIN3, Switch3.status);
 		Dprintln(d);
 	}
 	else if (pl == "3off") {
 		Switch3.turn(false);
-		String d = s_time() + "MQTT | OUTPUT3 = " + String(false);
+		String d = s_time() + "MQTT | OUTPUT3 = " + String(Switch3.status);
 		Blynk.virtualWrite(VPIN3, Switch3.status);
 		Dprintln(d);
 	}
@@ -570,6 +616,26 @@ BLYNK_WRITE(VPIN3) {
 	delay(1); yield();
 }
 
+void blink_led() {
+	static bool s = false;
+	unsigned long t = millis();
+	if (millis() - t > 1900) {
+		t = millis();
+		s = true;
+		if (s) {
+			LED_ON();
+		}
+	}
+	if (s) {
+		if (millis() - t > 100) {
+			t = millis();
+			s = false;
+			if (s) {
+				LED_OFF();
+			}
+		}
+	}
+}
 
 void setup()
 {
@@ -588,4 +654,5 @@ void loop()
 	mqtt_loop();
 	handle_serial();
 	handle_button();
+	blink_led();
 }
