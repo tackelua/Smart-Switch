@@ -4,6 +4,9 @@
 	Name:       Contactor3.ino
 	Created:	12/6/2018 9:33:17 AM
 	Author:     GITH\tacke
+
+	To Do
+	- Add Auto off when get timeout
 */
 
 
@@ -23,7 +26,7 @@
 #include <Button.h>
 #include <FS.h>
 
-#define VERSION     "0.1.5.1"
+#define VERSION     "0.1.6"
 
 
 #define INPUT1       12
@@ -38,6 +41,9 @@
 #define VPIN1        V1
 #define VPIN2        V2
 #define VPIN3        V3
+#define VTIMEOUT1    V4
+#define VTIMEOUT2    V5
+#define VTIMEOUT3    V6
 
 String HARDWARE_ID = "GITH-SW";
 
@@ -46,6 +52,7 @@ const char* file_blynk_token = "/blynk.token";
 String blynkToken = "d8297a5187c14fea8b04e92d8e4c2292";
 String blynkServer = "gith.cf";
 int blynkPort = 5222;//8442;
+bool BlynkConnected = false;
 
 WidgetTerminal Terminal(TERMINAL);
 WidgetRTC rtc;
@@ -118,11 +125,15 @@ public:
 		pinMode(_pin, OUTPUT);
 	}
 	bool status;
+	int timeout = 0;
+	unsigned long last_changed = 0;
 	void turn(bool stt) {
+		last_changed = millis();
 		status = stt;
 		digitalWrite(_pin, status);
 	}
 	void toggle() {
+		last_changed = millis();
 		status = !status;
 		digitalWrite(_pin, status);
 	}
@@ -511,6 +522,7 @@ void mqtt_reconnect() {
 	}
 }
 void mqtt_callback(char* topic, uint8_t* payload, unsigned int length) {
+	yield();
 	String pl;
 	LED_ON();
 	for (uint i = 0; i < length; i++) {
@@ -524,38 +536,45 @@ void mqtt_callback(char* topic, uint8_t* payload, unsigned int length) {
 		String d = s_time() + "MQTT | OUTPUT1 = " + String(Switch1.status);
 		Blynk.virtualWrite(VPIN1, Switch1.status);
 		Dprintln(d);
+		notify(d);
 	}
 	else if (pl == "1off") {
 		Switch1.turn(false);
 		String d = s_time() + "MQTT | OUTPUT1 = " + String(Switch1.status);
 		Blynk.virtualWrite(VPIN1, Switch1.status);
 		Dprintln(d);
+		notify(d);
 	}
 	else if (pl == "2on") {
 		Switch2.turn(true);
 		String d = s_time() + "MQTT | OUTPUT2 = " + String(Switch2.status);
 		Blynk.virtualWrite(VPIN2, Switch2.status);
 		Dprintln(d);
+		notify(d);
 	}
 	else if (pl == "2off") {
 		Switch2.turn(false);
 		String d = s_time() + "MQTT | OUTPUT2 = " + String(Switch2.status);
 		Blynk.virtualWrite(VPIN2, Switch2.status);
 		Dprintln(d);
+		notify(d);
 	}
 	else if (pl == "3on") {
 		Switch3.turn(true);
 		String d = s_time() + "MQTT | OUTPUT3 = " + String(Switch3.status);
 		Blynk.virtualWrite(VPIN3, Switch3.status);
 		Dprintln(d);
+		notify(d);
 	}
 	else if (pl == "3off") {
 		Switch3.turn(false);
 		String d = s_time() + "MQTT | OUTPUT3 = " + String(Switch3.status);
 		Blynk.virtualWrite(VPIN3, Switch3.status);
 		Dprintln(d);
+		notify(d);
 	}
 	else handle_command(pl);
+	delay(1); yield();
 }
 void mqtt_init() {
 	mqtt_client.setServer(mqtt_server, mqtt_port);
@@ -578,10 +597,28 @@ BLYNK_CONNECTED() {
 	rtc.begin();
 	//Blynk.syncVirtual(VPIN1, VPIN2, VPIN3);
 
-	Switch1.turn(false);
-	Switch2.turn(false);
-	Switch3.turn(false);
+	static bool run = false;
+	if (!run) {
+		run = true;
 
+		Switch1.turn(false);
+		Switch2.turn(false);
+		Switch3.turn(false);
+
+		Blynk.virtualWrite(VPIN1, Switch1.status);
+		Blynk.virtualWrite(VPIN2, Switch2.status);
+		Blynk.virtualWrite(VPIN3, Switch3.status);
+
+		String d;
+		d = s_time() + "START | OUTPUT1 = " + String(Switch1.status);
+		Dprintln(d);
+		d = s_time() + "START | OUTPUT2 = " + String(Switch2.status);
+		Dprintln(d);
+		d = s_time() + "START | OUTPUT3 = " + String(Switch3.status);
+		Dprintln(d);
+	}
+
+	Blynk.syncVirtual(VTIMEOUT1, VTIMEOUT2, VTIMEOUT3);
 	delay(1); yield();
 }
 
@@ -614,6 +651,77 @@ BLYNK_WRITE(VPIN3) {
 	String d = s_time() + "APP | OUTPUT3 = " + String(val);
 	Dprintln(d);
 	delay(1); yield();
+}
+
+BLYNK_WRITE(VTIMEOUT1) {
+	int val = param.asInt();
+	Switch1.timeout = val * 60000;
+	String d = s_time() + "TIMEOUT1 = " + String(val);
+	Dprintln(d);
+	delay(1); yield();
+}
+
+BLYNK_WRITE(VTIMEOUT2) {
+	int val = param.asInt();
+	Switch2.timeout = val * 60000;
+	String d = s_time() + "TIMEOUT2 = " + String(val);
+	Dprintln(d);
+	delay(1); yield();
+}
+
+BLYNK_WRITE(VTIMEOUT3) {
+	int val = param.asInt();
+	Switch3.timeout = val * 60000;
+	String d = s_time() + "TIMEOUT3 = " + String(val);
+	Dprintln(d);
+	delay(1); yield();
+}
+
+BLYNK_APP_CONNECTED() {
+	String x = "App Connected.";
+	Sprintln(x);
+	mqtt_publish(tp_res, x, false);
+	BlynkConnected = true;
+}
+
+// This is called when Smartphone App is closed
+BLYNK_APP_DISCONNECTED() {
+	String x = "App Disconnected.";
+	Sprintln(x);
+	mqtt_publish(tp_res, x, false);
+	BlynkConnected = false;
+}
+
+void notify(String n) {
+	if (!BlynkConnected) {
+		Blynk.notify(n);
+	}
+}
+void auto_off_timeout() {
+	if (Switch1.status && (Switch1.timeout > 0) && (millis() - Switch1.last_changed > Switch1.timeout)) {
+		Switch1.turn(false);
+		Blynk.virtualWrite(VPIN1, Switch1.status);
+		String d = s_time() + "AUTO | OUTPUT1 = " + String(Switch1.status);
+		Dprintln(d);
+		notify(d);
+		delay(1); yield();
+	}
+	if (Switch2.status && (Switch2.timeout > 0) && (millis() - Switch2.last_changed > Switch2.timeout)) {
+		Switch2.turn(false);
+		Blynk.virtualWrite(VPIN2, Switch2.status);
+		String d = s_time() + "AUTO | OUTPUT2 = " + String(Switch2.status);
+		Dprintln(d);
+		notify(d);
+		delay(1); yield();
+	}
+	if (Switch3.status && (Switch3.timeout > 0) && (millis() - Switch3.last_changed > Switch3.timeout)) {
+		Switch3.turn(false);
+		Blynk.virtualWrite(VPIN3, Switch3.status);
+		String d = s_time() + "AUTO | OUTPUT3 = " + String(Switch3.status);
+		Dprintln(d);
+		notify(d);
+		delay(1); yield();
+	}
 }
 
 void blink_led() {
@@ -649,4 +757,5 @@ void loop()
 	handle_serial();
 	handle_button();
 	blink_led();
+	auto_off_timeout();
 }
