@@ -26,7 +26,7 @@
 #include <Button.h>
 #include <FS.h>
 
-#define VERSION     "0.1.6"
+#define VERSION     "0.1.7"
 
 
 #define INPUT1       12
@@ -44,6 +44,8 @@
 #define VTIMEOUT1    V4
 #define VTIMEOUT2    V5
 #define VTIMEOUT3    V6
+#define VMODESTART   V7
+#define VWIFI        V8
 
 String HARDWARE_ID = "GITH-SW";
 
@@ -68,6 +70,34 @@ String tp_req = HARDWARE_ID + "/req";
 String tp_res = HARDWARE_ID + "/res";
 String tp_stt = HARDWARE_ID + "/stt";
 
+enum VMODESTART_e {
+	VMODE_OFF = 1,
+	VMODE_BUTTON,
+	VMODE_APP
+};
+VMODESTART_e STARTUP_MODE = VMODE_OFF;
+bool STARTUP_MODE_synced = false;
+bool BLYNK_connected = false;
+String STARTUP_MODE_toString() {
+
+	String m;
+	switch (STARTUP_MODE)
+	{
+	case VMODE_OFF:
+		m = "VMODE_OFF";
+		break;
+	case VMODE_BUTTON:
+		m = "VMODE_BUTTON";
+		break;
+	case VMODE_APP:
+		m = "VMODE_APP";
+		break;
+	default:
+		m = "UNKNOWN";
+		break;
+	}
+	return m;
+}
 
 #define Sprint		Serial.print
 #define Sprintln	Serial.println
@@ -106,7 +136,6 @@ String s_time() {
 #define Dprintf(...)	{ LED_ON(); Sprintf(__VA_ARGS__); Sflush(); Tprintf(__VA_ARGS__); Tflush(); LED_OFF();}
 #define Dtime()			{ Stime(); Ttime(); }
 
-
 //Button(uint8_t pin, uint8_t puEnable, uint8_t invert, uint32_t dbTime);
 bool puEnable = false;
 bool invert = true;
@@ -131,11 +160,24 @@ public:
 		last_changed = millis();
 		status = stt;
 		digitalWrite(_pin, status);
+
+		switch (_pin)
+		{
+		case OUTPUT1:
+			Blynk.virtualWrite(VPIN1, status);
+			break;
+		case OUTPUT2:
+			Blynk.virtualWrite(VPIN2, status);
+			break;
+		case OUTPUT3:
+			Blynk.virtualWrite(VPIN3, status);
+			break;
+		default:
+			break;
+		}
 	}
 	void toggle() {
-		last_changed = millis();
-		status = !status;
-		digitalWrite(_pin, status);
+		turn(!status);
 	}
 };
 
@@ -207,7 +249,6 @@ void handle_button() {
 
 	if (Button1.wasPressed() || Button1.wasReleased()) {
 		Switch1.toggle();
-		Blynk.virtualWrite(VPIN1, Switch1.status);
 		String d = s_time() + "HUB | OUTPUT1 = " + String(Switch1.status);
 		Dprintln(d);
 		delay(1); yield();
@@ -215,7 +256,6 @@ void handle_button() {
 
 	if (Button2.wasPressed() || Button2.wasReleased()) {
 		Switch2.toggle();
-		Blynk.virtualWrite(VPIN2, Switch2.status);
 		String d = s_time() + "HUB | OUTPUT2 = " + String(Switch2.status);
 		Dprintln(d);
 		delay(1); yield();
@@ -223,7 +263,6 @@ void handle_button() {
 
 	if (Button3.wasPressed() || Button3.wasReleased()) {
 		Switch3.toggle();
-		Blynk.virtualWrite(VPIN3, Switch3.status);
 		String d = s_time() + "HUB | OUTPUT3 = " + String(Switch3.status);
 		Dprintln(d);
 		delay(1); yield();
@@ -392,6 +431,16 @@ void update_firmware(String url = "") {
 		Sprintln(WiFi.localIP());
 	}
 }
+void res_wifi() {
+	String w = "WiFi: " + WiFi.SSID() + " - " + String(wifi_quality());
+	Dprintln(w);
+	w = WiFi.SSID() + " - " + String(wifi_quality());
+	Blynk.virtualWrite(VWIFI, w);
+}
+void res_version() {
+	String v = "Version: " VERSION;
+	Dprintln(v);
+}
 void handle_command(String cmd) {
 	yield();
 	cmd.trim();
@@ -414,8 +463,7 @@ void handle_command(String cmd) {
 
 	}
 	else if (cmd == "/v" || cmd.startsWith("/version")) {
-		String v = "Version: " VERSION;
-		Dprintln(v);
+		res_version();
 	}
 	else if (cmd == "/b" || cmd == "/blynk") {
 		String t = "Blynk Token: " + blynkToken;
@@ -458,8 +506,7 @@ void handle_command(String cmd) {
 		create_AP_portal();
 	}
 	else if (cmd == "/w" || cmd.startsWith("/wifi")) {
-		String w = "WiFi: " + WiFi.SSID() + " - " + String(wifi_quality());
-		Dprintln(w);
+		res_wifi();
 	}
 	else if (cmd.startsWith("/set wifi")) {
 		//set wifi <ssid>|<psk>
@@ -534,42 +581,36 @@ void mqtt_callback(char* topic, uint8_t* payload, unsigned int length) {
 	if (pl == "1on") {
 		Switch1.turn(true);
 		String d = s_time() + "MQTT | OUTPUT1 = " + String(Switch1.status);
-		Blynk.virtualWrite(VPIN1, Switch1.status);
 		Dprintln(d);
 		notify(d);
 	}
 	else if (pl == "1off") {
 		Switch1.turn(false);
 		String d = s_time() + "MQTT | OUTPUT1 = " + String(Switch1.status);
-		Blynk.virtualWrite(VPIN1, Switch1.status);
 		Dprintln(d);
 		notify(d);
 	}
 	else if (pl == "2on") {
 		Switch2.turn(true);
 		String d = s_time() + "MQTT | OUTPUT2 = " + String(Switch2.status);
-		Blynk.virtualWrite(VPIN2, Switch2.status);
 		Dprintln(d);
 		notify(d);
 	}
 	else if (pl == "2off") {
 		Switch2.turn(false);
 		String d = s_time() + "MQTT | OUTPUT2 = " + String(Switch2.status);
-		Blynk.virtualWrite(VPIN2, Switch2.status);
 		Dprintln(d);
 		notify(d);
 	}
 	else if (pl == "3on") {
 		Switch3.turn(true);
 		String d = s_time() + "MQTT | OUTPUT3 = " + String(Switch3.status);
-		Blynk.virtualWrite(VPIN3, Switch3.status);
 		Dprintln(d);
 		notify(d);
 	}
 	else if (pl == "3off") {
 		Switch3.turn(false);
 		String d = s_time() + "MQTT | OUTPUT3 = " + String(Switch3.status);
-		Blynk.virtualWrite(VPIN3, Switch3.status);
 		Dprintln(d);
 		notify(d);
 	}
@@ -592,33 +633,14 @@ void mqtt_loop() {
 }
 
 BLYNK_CONNECTED() {
-	// Synchronize time on connection
-	//Blynk.syncAll();
+	res_version();
 	rtc.begin();
-	//Blynk.syncVirtual(VPIN1, VPIN2, VPIN3);
 
-	static bool run = false;
-	if (!run) {
-		run = true;
+	String w = String(wifi_quality()) + "% - " + WiFi.SSID();
+	Blynk.virtualWrite(VWIFI, w);
 
-		Switch1.turn(false);
-		Switch2.turn(false);
-		Switch3.turn(false);
-
-		Blynk.virtualWrite(VPIN1, Switch1.status);
-		Blynk.virtualWrite(VPIN2, Switch2.status);
-		Blynk.virtualWrite(VPIN3, Switch3.status);
-
-		String d;
-		d = s_time() + "START | OUTPUT1 = " + String(Switch1.status);
-		Dprintln(d);
-		d = s_time() + "START | OUTPUT2 = " + String(Switch2.status);
-		Dprintln(d);
-		d = s_time() + "START | OUTPUT3 = " + String(Switch3.status);
-		Dprintln(d);
-	}
-
-	Blynk.syncVirtual(VTIMEOUT1, VTIMEOUT2, VTIMEOUT3);
+	Blynk.syncVirtual(VTIMEOUT1, VTIMEOUT2, VTIMEOUT3, VMODESTART);
+	BLYNK_connected = true;
 	delay(1); yield();
 }
 
@@ -677,6 +699,25 @@ BLYNK_WRITE(VTIMEOUT3) {
 	delay(1); yield();
 }
 
+BLYNK_WRITE(VMODESTART) {
+	int val = param.asInt();
+	switch (val)
+	{
+	case VMODE_OFF:
+	case VMODE_BUTTON:
+	case VMODE_APP:
+		STARTUP_MODE = VMODESTART_e(val);
+		break;
+	default:
+		STARTUP_MODE = VMODE_OFF;
+		break;
+	}
+	String d = s_time() + "STARTUP_MODE = " + STARTUP_MODE_toString();
+	Dprintln(d);
+	STARTUP_MODE_synced = true;
+	delay(1); yield();
+}
+
 BLYNK_APP_CONNECTED() {
 	String x = "App Connected.";
 	Sprintln(x);
@@ -692,6 +733,65 @@ BLYNK_APP_DISCONNECTED() {
 	BlynkConnected = false;
 }
 
+void startup_mode() {
+	if (BLYNK_connected && STARTUP_MODE_synced) {
+		BLYNK_connected = false;
+		STARTUP_MODE_synced = false;
+
+		switch (STARTUP_MODE)
+		{
+		case VMODE_OFF:
+			Switch1.turn(false);
+			Switch2.turn(false);
+			Switch3.turn(false);
+			break;
+		case VMODE_BUTTON:
+			Button1.read();
+			if (Button1.isReleased()) {
+				Switch1.turn(false);
+			}
+			else if (Button1.isPressed()) {
+				Switch1.turn(true);
+			}
+
+			Button2.read();
+			if (Button2.isReleased()) {
+				Switch2.turn(false);
+			}
+			else if (Button2.isPressed()) {
+				Switch2.turn(true);
+			}
+
+			Button3.read();
+			if (Button3.isReleased()) {
+				Switch3.turn(false);
+			}
+			else if (Button3.isPressed()) {
+				Switch3.turn(true);
+			}
+			break;
+		case VMODE_APP:
+			Blynk.syncVirtual(VPIN1, VPIN2, VPIN3);
+			delay(100);
+			for (int i = 0; i < 50; i++)
+			{
+				Blynk.run();
+			}
+			break;
+		default:
+			break;
+		}
+
+		String d = STARTUP_MODE_toString();
+		d = s_time() + "START | OUTPUT1 = " + String(Switch1.status);
+		d += "\r\n";
+		d += s_time() + "START | OUTPUT2 = " + String(Switch2.status);
+		d += "\r\n";
+		d += s_time() + "START | OUTPUT3 = " + String(Switch3.status);
+		Dprintln(d);
+	}
+}
+
 void notify(String n) {
 	if (!BlynkConnected) {
 		Blynk.notify(n);
@@ -700,7 +800,6 @@ void notify(String n) {
 void auto_off_timeout() {
 	if (Switch1.status && (Switch1.timeout > 0) && (millis() - Switch1.last_changed > Switch1.timeout)) {
 		Switch1.turn(false);
-		Blynk.virtualWrite(VPIN1, Switch1.status);
 		String d = s_time() + "AUTO | OUTPUT1 = " + String(Switch1.status);
 		Dprintln(d);
 		notify(d);
@@ -708,7 +807,6 @@ void auto_off_timeout() {
 	}
 	if (Switch2.status && (Switch2.timeout > 0) && (millis() - Switch2.last_changed > Switch2.timeout)) {
 		Switch2.turn(false);
-		Blynk.virtualWrite(VPIN2, Switch2.status);
 		String d = s_time() + "AUTO | OUTPUT2 = " + String(Switch2.status);
 		Dprintln(d);
 		notify(d);
@@ -716,7 +814,6 @@ void auto_off_timeout() {
 	}
 	if (Switch3.status && (Switch3.timeout > 0) && (millis() - Switch3.last_changed > Switch3.timeout)) {
 		Switch3.turn(false);
-		Blynk.virtualWrite(VPIN3, Switch3.status);
 		String d = s_time() + "AUTO | OUTPUT3 = " + String(Switch3.status);
 		Dprintln(d);
 		notify(d);
@@ -754,6 +851,7 @@ void loop()
 {
 	Blynk.run();
 	mqtt_loop();
+	startup_mode();
 	handle_serial();
 	handle_button();
 	blink_led();
