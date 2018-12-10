@@ -1,12 +1,10 @@
-// Visual Micro is in vMicro>General>Tutorial Mode
+﻿// Visual Micro is in vMicro>General>Tutorial Mode
 // 
 /*
 	Name:       Contactor3.ino
 	Created:	12/6/2018 9:33:17 AM
 	Author:     GITH\tacke
 
-	To Do
-	- Add Auto off when get timeout
 */
 
 
@@ -26,7 +24,7 @@
 #include <Button.h>
 #include <FS.h>
 
-#define VERSION     "0.1.7"
+#define VERSION     "0.1.8"
 
 
 #define INPUT1       12
@@ -247,22 +245,40 @@ void handle_button() {
 	Button2.read();
 	Button3.read();
 
-	if (Button1.wasPressed() || Button1.wasReleased()) {
-		Switch1.toggle();
+	if (Button1.wasPressed() && !Switch1.status) {
+		Switch1.turn(true);
+		String d = s_time() + "HUB | OUTPUT1 = " + String(Switch1.status);
+		Dprintln(d);
+		delay(1); yield();
+	}
+	if (Button1.wasReleased() && Switch1.status) {
+		Switch1.turn(false);
 		String d = s_time() + "HUB | OUTPUT1 = " + String(Switch1.status);
 		Dprintln(d);
 		delay(1); yield();
 	}
 
-	if (Button2.wasPressed() || Button2.wasReleased()) {
-		Switch2.toggle();
+	if (Button2.wasPressed() && !Switch2.status) {
+		Switch2.turn(true);
+		String d = s_time() + "HUB | OUTPUT2 = " + String(Switch2.status);
+		Dprintln(d);
+		delay(1); yield();
+	}
+	if (Button2.wasReleased() && Switch2.status) {
+		Switch2.turn(false);
 		String d = s_time() + "HUB | OUTPUT2 = " + String(Switch2.status);
 		Dprintln(d);
 		delay(1); yield();
 	}
 
-	if (Button3.wasPressed() || Button3.wasReleased()) {
-		Switch3.toggle();
+	if (Button3.wasPressed() && !Switch3.status) {
+		Switch3.turn(true);
+		String d = s_time() + "HUB | OUTPUT3 = " + String(Switch3.status);
+		Dprintln(d);
+		delay(1); yield();
+	}
+	if (Button3.wasReleased() && Switch3.status) {
+		Switch3.turn(false);
 		String d = s_time() + "HUB | OUTPUT3 = " + String(Switch3.status);
 		Dprintln(d);
 		delay(1); yield();
